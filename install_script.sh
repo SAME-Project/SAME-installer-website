@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+
+# SAME authors (c)
+
+# Original copyright
+# https://raw.githubusercontent.com/dapr/cli/master/install/install.sh
+# ------------------------------------------------------------
+# Copyright (c) Microsoft Corporation and Dapr Contributors.
+# Licensed under the MIT License.
+# ------------------------------------------------------------
+
+# SAME CLI location
+: ${SAME_INSTALL_DIR:="/usr/local/bin"}
+
+# sudo is required to copy binary to SAME_INSTALL_DIR for linux
+: ${USE_SUDO:="false"}
+
+# Http request CLI
+SAME_HTTP_REQUEST_CLI=curl
+
+# GitHub Organization and repo name to download release
+# GITHUB_ORG=same-project
+# GITHUB_REPO=same-cli
+GITHUB_ORG=SAME-Project
+GITHUB_REPO=SAMPLE-CLI-TESTER
+
+# SAME CLI filename
+SAME_CLI_FILENAME=same
+
+SAME_CLI_FILE="${SAME_INSTALL_DIR}/${SAME_CLI_FILENAME}"
+
+SAME_PUBLIC_KEY=`echo "$(cat <<-END
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA3IFWsWTFcszwc5y3Mk3/
+zIP7JWFhWIyeujSEpMP95Ecv7WYG0QswupPHdAIYLTT5PxM55vzZHOS9EbF8TcA5
+Lw3guGDcQHBVOx0a0704iKPffZOSeMxCgbJzJhaHIcGC1NLuAftylNed99MgTurR
+WC4xVaMN4ldoQcSgEa//8HMT/s7EDEPilrd4mJznziNyWSij7YTrRrzAAlrncnqP
+k4UhlZzjLjFLHsJl0nsHJCQo7K9Dca1PQkIdcWfTF1qEV8S96xqRyjF0I5MyaW37
+LJWOpstbNEY93c3z1N2xnyiVQk7Gmmm2znAvUsWFqYwqIMTtBWWC++3C+SIJjS+q
+lYTGl8rzUm+kSHp6TpeDzYe181iQgnA7BZhp/+PF+LwHa0sDCCsn3P9u04rwpwpj
+Dr+UJwQD9jeul+m7I4HuVlfgDi7iEo/Azk0d8AJ2uipy9qCIrWn2ANzKU5/hyBws
+1P0WU6mrClqwigFV+OjstXuOvBGukb5GgobXhjR8KZX3+i0SNulgo/BdzJWFO4Wb
+QGkl8Wuktjpxzt1394/DUBhwjyVkklG3RI1HFOhnd4H850gENx8eacFkEwRrNGOE
+Je/w4xJbi4YrXginjc48Yu5LYMhmE/M9M81bv9J8K1sjdxTLsTXGifUXWfL9jhEA
+WSXxaVcdCkkT28+CQeWdVfMCAwEAAQ==
+-----END PUBLIC KEY-----
+END
+)"`
+
+getSystemInfo() {
+    ARCH=$(uname -m)
+    case $ARCH in
+        armv7*) ARCH="arm";;
+        aarch64) ARCH="arm64";;
+        x86_64) ARCH="amd64";;
+    esac
+    
+    OS=$(echo `uname`|tr '[:upper:]' '[:lower:]')
+    
+    # Most linux distro needs root permission to copy the file to /usr/local/bin
+    if [ "$OS" == "linux" ] && [ "$SAME_INSTALL_DIR" == "/usr/local/bin" ]; then
+        USE_SUDO="true"
+    fi
+}
+
+verifySupported() {
+    local supported=(darwin-amd64 linux-amd64 linux-arm linux-arm64)
+    local current_osarch="${OS}-${ARCH}"
+    
+    for osarch in "${supported[@]}"; do
+        if [ "$osarch" == "$current_osarch" ]; then
+            echo "Your system is ${OS}_${ARCH}"
+            return
+        fi
+    done
+    
+    if [ "$current_osarch" != "linux-amd64" ]; then
+        echo "No prebuilt binary for ${current_osarch}"
+        exit 1
+    fi
+    
+    
+}
+
+runAsRoot() {
+    local CMD="$*"
+
+    if [ $EUID -ne 0 -a $USE_SUDO = "true" ]; then
+        CMD="sudo $CMD"
+    fi
+
+    $CMD
+}
+
+checkHttpRequestCLI() {
+    if type "curl" > /dev/null; then
+        SAME_HTTP_REQUEST_CLI=curl
+        elif type "wget" > /dev/null; then
+        SAME_HTTP_REQUEST_CLI=wget
+    else
+        echo "Either curl or wget is required"
+        exit 1
+    fi
+}
+
+checkExistingSame() {
+    if [ -f "$SAME_CLI_FILE" ]; then
+        echo -e "\nSAME CLI is detected:"
+        $SAME_CLI_FILE --version
+        echo -e "Reinstalling SAME CLI - ${SAME_CLI_FILE}...\n"
+    else
+        echo -e "No SAME detected. Installing fresh SAME CLI...\n"
+    fi
+}
+
+getLatestRelease() {
+    local sameReleaseUrl="https://api.github.com/repos/${GITHUB_ORG}/${GITHUB_REPO}/releases"
+    local latest_release=""
+    
+    if [ "$SAME_HTTP_REQUEST_CLI" == "curl" ]; then
+        latest_release=$(curl -s $sameReleaseUrl | grep \"tag_name\" | grep -v rc | awk 'NR==1{print $2}' |  sed -n 's/\"\(.*\)\",/\1/p')
+    else
+        latest_release=$(wget -q --header="Accept: application/json" -O - $sameReleaseUrl | grep \"tag_name\" | grep -v rc | awk 'NR==1{print $2}' |  sed -n 's/\"\(.*\)\",/\1/p')
+    fi
+    
+    ret_val=$latest_release
+}
+
+downloadFile() {
+    LATEST_RELEASE_TAG=$1
+    
+    SAME_CLI_ARTIFACT="${SAME_CLI_FILENAME}_${LATEST_RELEASE_TAG}_${OS}.tar.gz"
+    SAME_SIG_ARTIFACT="${SAME_CLI_ARTIFACT}.signature.sha256"
+    
+    DOWNLOAD_BASE="https://github.com/${GITHUB_ORG}/${GITHUB_REPO}/releases/download"
+    
+    CLI_DOWNLOAD_URL="${DOWNLOAD_BASE}/${LATEST_RELEASE_TAG}/${SAME_CLI_ARTIFACT}"
+    SIG_DOWNLOAD_URL="${DOWNLOAD_BASE}/${LATEST_RELEASE_TAG}/${SAME_SIG_ARTIFACT}"
+    
+    # Create the temp directory
+    SAME_TMP_ROOT=$(mktemp -dt same-install-XXXXXX)
+    echo $SAME_TMP_ROOT
+    
+    CLI_TMP_FILE="$SAME_TMP_ROOT/$SAME_CLI_ARTIFACT"
+    SIG_TMP_FILE="$SAME_TMP_ROOT/$SAME_SIG_ARTIFACT"
+    
+    echo "Downloading $CLI_DOWNLOAD_URL ..."
+    if [ "$SAME_HTTP_REQUEST_CLI" == "curl" ]; then
+        curl -SsLN "$CLI_DOWNLOAD_URL" -o "$CLI_TMP_FILE"
+    else
+        wget -q -O "$CLI_TMP_FILE" "$CLI_DOWNLOAD_URL"
+    fi
+    
+    if [ ! -f "$CLI_TMP_FILE" ]; then
+        echo "failed to download $CLI_DOWNLOAD_URL ..."
+        exit 1
+    fi
+    
+    echo "Downloading sig file $SIG_DOWNLOAD_URL ..."
+    if [ "$SAME_HTTP_REQUEST_CLI" == "curl" ]; then
+        curl -SsLN "$SIG_DOWNLOAD_URL" -o "$SIG_TMP_FILE"
+    else
+        wget -q -O "$SIG_TMP_FILE" "$SIG_DOWNLOAD_URL"
+    fi
+    
+    if [ ! -f "$SIG_TMP_FILE" ]; then
+        echo "failed to download $SIG_DOWNLOAD_URL ..."
+        exit 1
+    fi
+    
+}
+
+verifyTarBall() {
+    echo "$SAME_PUBLIC_KEY" > "$SAME_TMP_ROOT/SAME_public_file.pem"
+    openssl base64 -d -in $SIG_TMP_FILE -out $SIG_TMP_FILE.decoded
+    if openssl dgst -sha256 -verify "$SAME_TMP_ROOT/SAME_public_file.pem" -signature $SIG_TMP_FILE.decoded $CLI_TMP_FILE ; then
+        return
+    else
+        echo "Failed to verify signature of tarball."
+        exit 1
+    fi
+}
+
+expandTarball() {
+    echo "Extract tar file - $CLI_TMP_FILE to $SAME_TMP_ROOT"
+    tar xzf $CLI_TMP_FILE -C $SAME_TMP_ROOT
+}
+
+verifyBin() {
+    openssl base64 -d -in $SAME_TMP_ROOT/same.signature.sha256 -out $SAME_TMP_ROOT/same.signature.sha256.decoded
+    if openssl dgst -sha256 -verify "$SAME_TMP_ROOT/SAME_public_file.pem" -signature $SAME_TMP_ROOT/same.signature.sha256.decoded $SAME_TMP_ROOT/same; then
+        return
+    else
+        echo "Failed to verify signature of same binary."
+        exit 1
+    fi
+}
+
+
+installFile() {
+    local tmp_root_same_cli="$SAME_TMP_ROOT/$SAME_CLI_FILENAME"
+
+    if [ ! -f "$tmp_root_same_cli" ]; then
+        echo "Failed to unpack Same CLI executable."
+        exit 1
+    fi
+
+    chmod o+x $tmp_root_same_cli
+    runAsRoot cp "$tmp_root_same_cli" "$SAME_INSTALL_DIR"
+
+    if [ -f "$SAME_CLI_FILE" ]; then
+        echo "$SAME_CLI_FILENAME installed into $SAME_INSTALL_DIR successfully."
+
+        $SAME_CLI_FILE --version
+    else
+        echo "Failed to install $SAME_CLI_FILENAME"
+        exit 1
+    fi
+}
+
+fail_trap() {
+    result=$?
+    if [ "$result" != "0" ]; then
+        echo "Failed to install SAME CLI"
+        echo "For support, go to https://github.com/${GITHUB_ORG}/${GITHUB_REPO}"
+    fi
+    cleanup
+    exit $result
+}
+
+cleanup() {
+    if [[ -d "${SAME_TMP_ROOT:-}" ]]; then
+        echo "mocked"
+        # rm -rf "$SAME_TMP_ROOT"
+    fi
+}
+
+installCompleted() {
+    echo -e "\nTo get started with SAME, please visit https://github.com/${GITHUB_ORG}/${GITHUB_REPO}"
+}
+
+# -----------------------------------------------------------------------------
+# main
+# -----------------------------------------------------------------------------
+trap "fail_trap" EXIT
+
+getSystemInfo
+verifySupported
+checkExistingSame
+checkHttpRequestCLI
+
+if [ -z "$1" ]; then
+    echo "Getting the latest SAME CLI..."
+    getLatestRelease
+else
+    ret_val=v$1
+fi
+
+echo "Installing $ret_val SAME CLI..."
+
+downloadFile $ret_val
+verifyTarBall
+expandTarball
+verifyBin
+installFile
+cleanup
+
+installCompleted
