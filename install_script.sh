@@ -107,9 +107,9 @@ checkExistingSame() {
     if [ -f "$SAME_CLI_FILE" ]; then
         echo -e "\nSAME CLI is detected:"
         $SAME_CLI_FILE --version
-        echo -e "Reinstalling SAME CLI - ${SAME_CLI_FILE}...\n"
+        echo -e "Reinstalling SAME CLI - ${SAME_CLI_FILE}..."
     else
-        echo -e "No SAME detected. Installing fresh SAME CLI...\n"
+        echo -e "No SAME detected. Installing fresh SAME CLI..."
     fi
 }
 
@@ -171,6 +171,8 @@ downloadFile() {
 }
 
 verifyTarBall() {
+    #echo "ROOT: $SAME_TMP_ROOT"
+    #echo "Public Key: $SAME_PUBLIC_KEY"
     echo "$SAME_PUBLIC_KEY" > "$SAME_TMP_ROOT/SAME_public_file.pem"
     openssl base64 -d -in $SIG_TMP_FILE -out $SIG_TMP_FILE.decoded
     if openssl dgst -sha256 -verify "$SAME_TMP_ROOT/SAME_public_file.pem" -signature $SIG_TMP_FILE.decoded $CLI_TMP_FILE ; then
@@ -230,8 +232,7 @@ fail_trap() {
 
 cleanup() {
     if [[ -d "${SAME_TMP_ROOT:-}" ]]; then
-        echo "mocked"
-        # rm -rf "$SAME_TMP_ROOT"
+        rm -rf "$SAME_TMP_ROOT"
     fi
 }
 

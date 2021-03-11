@@ -7,6 +7,8 @@ authors = ["David Aronchick <aronchick@gmail.com>"]
 [tool.poetry.dependencies]
 python = "^3.8"
 Flask = "^1.1.2"
+PyGithub = "^1.54.1"
+ipython = "^7.21.0"
 
 [tool.poetry.dev-dependencies]
 black = {version = "^20.8b1", allow-prereleases = true}
