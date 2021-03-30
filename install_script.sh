@@ -129,7 +129,7 @@ getLatestRelease() {
 downloadFile() {
     LATEST_RELEASE_TAG=$1
     
-    SAME_CLI_ARTIFACT="${SAME_CLI_FILENAME}_${LATEST_RELEASE_TAG}_${OS}.tar.gz"
+    SAME_CLI_ARTIFACT="${SAME_CLI_FILENAME}_${LATEST_RELEASE_TAG}_${OS}_${ARCH}.tar.gz"
     SAME_SIG_ARTIFACT="${SAME_CLI_ARTIFACT}.signature.sha256"
     
     DOWNLOAD_BASE="https://github.com/${GITHUB_ORG}/${GITHUB_REPO}/releases/download"
