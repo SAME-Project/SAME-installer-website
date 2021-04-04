@@ -50,13 +50,13 @@ END
 getSystemInfo() {
     ARCH=$(uname -m)
     case $ARCH in
-        armv7*) ARCH="arm";;
-        aarch64) ARCH="arm64";;
-        x86_64) ARCH="amd64";;
+        armv7*) ARCH="arm" ;;
+        aarch64) ARCH="arm64" ;;
+        x86_64) ARCH="amd64" ;;
     esac
-    
+
     OS=$(echo `uname`|tr '[:upper:]' '[:lower:]')
-    
+
     # Most linux distro needs root permission to copy the file to /usr/local/bin
     if [ "$OS" == "linux" ] && [ "$SAME_INSTALL_DIR" == "/usr/local/bin" ]; then
         USE_SUDO="true"
@@ -64,22 +64,18 @@ getSystemInfo() {
 }
 
 verifySupported() {
-    local supported=(darwin-amd64 linux-amd64 linux-arm linux-arm64)
+    local supported=(darwin-amd64 linux-amd64)
     local current_osarch="${OS}-${ARCH}"
-    
+
     for osarch in "${supported[@]}"; do
         if [ "$osarch" == "$current_osarch" ]; then
             echo "Your system is ${OS}_${ARCH}"
             return
         fi
     done
-    
-    if [ "$current_osarch" != "linux-amd64" ]; then
-        echo "No prebuilt binary for ${current_osarch}"
-        exit 1
-    fi
-    
-    
+
+    echo "No prebuilt binary for ${current_osarch}"
+    exit 1
 }
 
 runAsRoot() {
@@ -95,7 +91,7 @@ runAsRoot() {
 checkHttpRequestCLI() {
     if type "curl" > /dev/null; then
         SAME_HTTP_REQUEST_CLI=curl
-        elif type "wget" > /dev/null; then
+    elif type "wget" > /dev/null; then
         SAME_HTTP_REQUEST_CLI=wget
     else
         echo "Either curl or wget is required"
@@ -116,58 +112,67 @@ checkExistingSame() {
 getLatestRelease() {
     local sameReleaseUrl="https://api.github.com/repos/${GITHUB_ORG}/${GITHUB_REPO}/releases"
     local latest_release=""
-    
+
     if [ "$SAME_HTTP_REQUEST_CLI" == "curl" ]; then
         latest_release=$(curl -s $sameReleaseUrl | grep \"tag_name\" | grep -v rc | awk 'NR==1{print $2}' |  sed -n 's/\"\(.*\)\",/\1/p')
     else
         latest_release=$(wget -q --header="Accept: application/json" -O - $sameReleaseUrl | grep \"tag_name\" | grep -v rc | awk 'NR==1{print $2}' |  sed -n 's/\"\(.*\)\",/\1/p')
     fi
-    
+
     ret_val=$latest_release
+}
+# --- create temporary directory and cleanup when done ---
+setup_tmp() {
+    SAME_TMP_ROOT=$(mktemp -dt dapr-install-XXXXXX)
+    SAME_TMP_ROOT=$(mktemp -d 2>/dev/null || mktemp -d -t 'same-install.XXXXXXXXXX')
+    cleanup() {
+        code=$?
+        set +e
+        trap - EXIT
+        rm -rf ${SAME_TMP_ROOT}
+        exit $code
+    }
+    trap cleanup INT EXIT
 }
 
 downloadFile() {
     LATEST_RELEASE_TAG=$1
-    
+
     SAME_CLI_ARTIFACT="${SAME_CLI_FILENAME}_${LATEST_RELEASE_TAG}_${OS}_${ARCH}.tar.gz"
     SAME_SIG_ARTIFACT="${SAME_CLI_ARTIFACT}.signature.sha256"
-    
+
     DOWNLOAD_BASE="https://github.com/${GITHUB_ORG}/${GITHUB_REPO}/releases/download"
-    
+
     CLI_DOWNLOAD_URL="${DOWNLOAD_BASE}/${LATEST_RELEASE_TAG}/${SAME_CLI_ARTIFACT}"
     SIG_DOWNLOAD_URL="${DOWNLOAD_BASE}/${LATEST_RELEASE_TAG}/${SAME_SIG_ARTIFACT}"
-    
-    # Create the temp directory
-    SAME_TMP_ROOT=$(mktemp -dt same-install-XXXXXX)
-    echo $SAME_TMP_ROOT
-    
+
     CLI_TMP_FILE="$SAME_TMP_ROOT/$SAME_CLI_ARTIFACT"
     SIG_TMP_FILE="$SAME_TMP_ROOT/$SAME_SIG_ARTIFACT"
-    
+
     echo "Downloading $CLI_DOWNLOAD_URL ..."
     if [ "$SAME_HTTP_REQUEST_CLI" == "curl" ]; then
         curl -SsLN "$CLI_DOWNLOAD_URL" -o "$CLI_TMP_FILE"
     else
         wget -q -O "$CLI_TMP_FILE" "$CLI_DOWNLOAD_URL"
     fi
-    
+
     if [ ! -f "$CLI_TMP_FILE" ]; then
         echo "failed to download $CLI_DOWNLOAD_URL ..."
         exit 1
     fi
-    
+
     echo "Downloading sig file $SIG_DOWNLOAD_URL ..."
     if [ "$SAME_HTTP_REQUEST_CLI" == "curl" ]; then
         curl -SsLN "$SIG_DOWNLOAD_URL" -o "$SIG_TMP_FILE"
     else
         wget -q -O "$SIG_TMP_FILE" "$SIG_DOWNLOAD_URL"
     fi
-    
+
     if [ ! -f "$SIG_TMP_FILE" ]; then
         echo "failed to download $SIG_DOWNLOAD_URL ..."
         exit 1
     fi
-    
+
 }
 
 verifyTarBall() {
@@ -259,6 +264,7 @@ fi
 
 echo "Installing $ret_val SAME CLI..."
 
+setup_tmp
 downloadFile $ret_val
 verifyTarBall
 expandTarball
