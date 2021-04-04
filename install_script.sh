@@ -189,7 +189,8 @@ verifyTarBall() {
 }
 
 expandTarball() {
-    echo "Extract tar file - $CLI_TMP_FILE to $SAME_TMP_ROOT"
+    echo "Extracting and verifying signature..."
+    # echo "Extract tar file - $CLI_TMP_FILE to $SAME_TMP_ROOT"
     tar xzf $CLI_TMP_FILE -C $SAME_TMP_ROOT
 }
 
